@@ -9,7 +9,7 @@
 // Constants
 
 const long CHUNK_SIZE = 4096;
-const long NUMBER_OF_BLOCKS_IN_CHUNK = 512;
+const uint32_t NUMBER_OF_BLOCKS_IN_CHUNK = 512;
 
 /*
  * For standarization and alignment reasons, bools will be treated as
@@ -51,10 +51,12 @@ int get_new_chunk() {
     // sets up global variables if first allocation
     if (number_of_chunks == 1) {
         heap_start = new_allocation_ptr;
+        assert((unsigned long)heap_start % 8 == 0);
         out_of_bounds_start = heap_start + CHUNK_SIZE;
         return 0;
     }
-
+    
+    assert((unsigned long) out_of_bounds_start + (unsigned long) new_memory_size_in_bytes == (unsigned long) (out_of_bounds_start + new_memory_size_in_bytes));
     out_of_bounds_start += new_memory_size_in_bytes;   
     return 0;
 }
@@ -62,12 +64,14 @@ int get_new_chunk() {
 void create_first_header() {
     struct header first_header = {0, NUMBER_OF_BLOCKS_IN_CHUNK};
     *heap_start = first_header;
+    assert(heap_start->allocated_blocks == NUMBER_OF_BLOCKS_IN_CHUNK);
 }
 
 void allocate_at(struct header* address, int size) {
     int original_header_size = address->allocated_blocks;
 
     struct header new_header = {1, size};
+    *address = new_header;
 
     int next_header_size = original_header_size - size - 1;
 
@@ -76,7 +80,7 @@ void allocate_at(struct header* address, int size) {
     }
 
     struct header next_header = {0, next_header_size};
-    address[size + 1] = new_header;
+    address[size + 1] = next_header; 
 }
 
 void* nalloc(int allocation_size_in_bytes) {
@@ -85,6 +89,7 @@ void* nalloc(int allocation_size_in_bytes) {
 
     if(number_of_chunks == 0) {
         get_new_chunk();
+        create_first_header();
     }
 
     struct header* current_header = heap_start;
@@ -95,24 +100,81 @@ void* nalloc(int allocation_size_in_bytes) {
             get_new_chunk();
             // *todo* resize last empty header or add new empty header;
             continue;
+            printf("had to resize \n");
         }
 
         if (current_header->is_occupied == 0 
-        && current_header->allocated_blocks <= number_of_blocks) {
+        && current_header->allocated_blocks >= number_of_blocks) {
             allocate_at(current_header, number_of_blocks);
-            return (void*) current_header;
+            return (void*) &(current_header[1]);
         }
 
-        current_header = &current_header[number_of_blocks + 1];
+        current_header = &current_header[current_header->allocated_blocks + 1];
     }
 }
 
-int main() {
-    int* test = nalloc(sizeof(int));
-    *test = 34;
-    printf("value: %d, stored: %p \n", *test, test);
+void nalloc_free(void* to_be_free_ptr){
+    struct header* to_be_free_header_ptr = &((struct header*) to_be_free_ptr)[-1];
 
-    int* test2 = nalloc(sizeof(int));
-    *test2 = 7;
+    if (to_be_free_header_ptr == heap_start) {
+        to_be_free_header_ptr->is_occupied = 0;
+        return;
+    }  
+    
+    struct header* current_header = heap_start;
+
+    while (1) {
+        struct header* current_headers_next = &current_header[current_header->allocated_blocks + 1];
+
+        if (current_header >= out_of_bounds_start) {
+            printf("Warning, critical structural error\n");
+            return;
+        }
+
+        if (current_headers_next != to_be_free_header_ptr) {
+            current_header = current_headers_next;
+            continue;
+        }
+
+        if (current_header->is_occupied == 0) {
+            current_header->allocated_blocks += to_be_free_header_ptr->allocated_blocks + 1;
+            return;
+        }
+
+        to_be_free_header_ptr->is_occupied = 0;
+        return;
+    }
+
+}
+
+struct stest {
+    long test1;
+    long test2;
+    long test3;
+    long test4;
+};
+
+int main() {
+    struct stest* test = nalloc(sizeof(struct stest));
+    printf("value of size: %lu, stored: %p \n", sizeof(*test), test);
+
+    printf("Heap beggins at: %p, with alloctated_blocks: %lu \n", heap_start, 
+            (unsigned long) (heap_start->allocated_blocks));
+   
+    short* test2 = nalloc(sizeof(short));
+    *test2 = 2;
     printf("value: %d, stored: %p \n", *test2, test2);
+
+    struct stest* test3 = nalloc(sizeof(struct stest));
+    printf("value of size: %lu, stored: %p \n", sizeof(*test3), test3);
+
+    nalloc_free(test2);
+    printf("pointer: %p was freed \n", test2);
+
+    struct stest* test4 = nalloc(sizeof(struct stest));
+    printf("value of size: %lu, stored: %p \n", sizeof(*test4), test4);
+
+    short* test5 = nalloc(sizeof(short));
+    *test5 = 5;
+    printf("value: %d, stored: %p \n", *test5, test5);
 }
