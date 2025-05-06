@@ -6,6 +6,6 @@ Nalloc uses sbrk to request new memory,
 and header memory blocks as metadata.
 
 Contains the:
-nalloc() \n
-nalloc_free() \n
+nalloc()  
+nalloc_free()  
 functions, used pretty much exactly as their malloc equivalents.
