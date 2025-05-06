@@ -24,20 +24,12 @@ struct header {
 // Global variables
 
 struct header* heap_start;
+
+// Pointer to the first byte outside of the program's memory range
 struct header* out_of_bounds_start;
 int number_of_chunks = 0;
 
-/*
- * If the current number of chunks is 0
- * meaning is the first allocation
- * it will automatically set the
- * first_header and out_of_bounds variables
- * aswell as handle the number_of_pages variable in general
- *
- * will return 1 if there is an error present
- */
-
-void update_last_header() {
+void update_sorrounding_headers() {
 
     struct header* current_header = heap_start;
 
@@ -45,7 +37,7 @@ void update_last_header() {
 
     while (1) {
         if ((uint64_t) current_header > out_of_bounds_start_ptr) {
-            printf("Warning, critical structural error\n");
+            fprintf(stderr, "Warning, critical structural error\n");
             return;
         }
 
@@ -68,6 +60,16 @@ void update_last_header() {
 
 }
 
+/*
+ * If the current number of chunks is 0
+ * meaning is the first allocation
+ * it will automatically set the
+ * first_header and out_of_bounds variables
+ * aswell as handle the number_of_pages variable in general
+ *
+ * will return 1 if there is an error present
+ */
+
 int get_new_chunk() {
     struct header* new_allocation_ptr = sbrk(CHUNK_SIZE);
 
@@ -84,7 +86,7 @@ int get_new_chunk() {
         return 0;
     }
     
-    update_last_header();
+    update_sorrounding_headers();
 
     out_of_bounds_start = (struct header*) ((uint64_t) out_of_bounds_start + CHUNK_SIZE);
 
@@ -96,6 +98,12 @@ void create_first_header() {
     struct header first_header = {0, NUMBER_OF_BLOCKS_IN_CHUNK - 1};
     *heap_start = first_header;
 }
+
+/*
+ * Will mark a given memory space as occupied
+ * and update any sorrounding memory blocks
+ * accordingly
+ */
 
 void allocate_at(struct header* address, int size) {
     int original_header_size = address->allocated_blocks;
@@ -113,6 +121,7 @@ void allocate_at(struct header* address, int size) {
     address[size + 1] = next_header; 
 }
 
+// For debugging only
 void show_structure() {
     struct header* current_header = heap_start;
     printf("heap: %p --> %p, size: %lu \n", heap_start, out_of_bounds_start, (uint64_t) out_of_bounds_start - (uint64_t) heap_start);
@@ -129,7 +138,9 @@ void* nalloc(int allocation_size_in_bytes) {
     int number_of_blocks = (allocation_size_in_bytes + 8 - 1) / 8;
 
     if(number_of_chunks == 0) {
-        get_new_chunk();
+        if (get_new_chunk() == 1) {
+            return NULL;
+        }
         create_first_header();
     }
 
@@ -138,7 +149,9 @@ void* nalloc(int allocation_size_in_bytes) {
     while (1) {
         // Check if still in bounds
         if (current_header >= out_of_bounds_start) {
-            get_new_chunk();
+            if (get_new_chunk() == 1) {
+                return NULL;
+            }
             current_header = heap_start;
             continue;
         }
@@ -167,7 +180,7 @@ void nalloc_free(void* to_be_free_ptr){
         struct header* current_headers_next = &current_header[current_header->allocated_blocks + 1];
 
         if (current_header >= out_of_bounds_start) {
-            printf("Warning, critical structural error\n");
+            fprintf(stderr, "Warning, critical structural error\n");
             return;
         }
 
